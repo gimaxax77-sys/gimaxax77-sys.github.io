@@ -1,0 +1,213 @@
+<!-- 슬라임 왕국S 운영 관리 페이지(서버 S7) — 운영자 구글 로그인 · 계정 찾기 · 보관본 되돌리기 · 우편 · 공지 · 이용 제한. 권한 판정은 서버 함수(admin_*)가 한다 -->
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>슬라임 왕국S 관리</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--fg:#1b2333;--mute:#5d6678;--line:#dce2ec;--acc:#2f6fe0;--bad:#c4402a;--ok:#1f9e6e}
+@media (prefers-color-scheme:dark){:root{--bg:#11151d;--card:#1a202b;--fg:#e3e8f1;--mute:#9aa4b6;--line:#2b3342;--acc:#7aa6ff;--bad:#f0866b;--ok:#4cc99a;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Noto Sans KR",sans-serif;padding:16px}
+main{max-width:720px;margin:0 auto;display:grid;gap:14px}
+h1{font-size:1.3rem;margin:0}
+h2{font-size:1.05rem;margin:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px;min-width:0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,textarea,select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);min-width:0}
+input,textarea{flex:1}
+textarea{width:100%;min-height:70px}
+button{font:inherit;font-weight:700;padding:8px 14px;border-radius:8px;border:0;background:var(--acc);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--acc);border:1px solid var(--line)}
+button.bad{background:var(--bad)}
+nav{display:flex;gap:6px;flex-wrap:wrap}
+nav button{background:var(--card);color:var(--fg);border:1px solid var(--line)}
+nav button.on{background:var(--acc);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.stat b{display:block;font-size:1.3rem;font-variant-numeric:tabular-nums}
+.stat span{color:var(--mute);font-size:.8rem}
+.list{display:grid;gap:6px}
+.item{border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer;display:grid;gap:2px}
+.item small,.mute{color:var(--mute);font-size:.85rem}
+.mono{font-family:ui-monospace,monospace;font-size:.85rem;word-break:break-all}
+.tag{font-size:.75rem;font-weight:700;padding:1px 7px;border-radius:99px;border:1px solid var(--line)}
+.tag.bad{color:var(--bad);border-color:var(--bad)}
+.tag.ok{color:var(--ok);border-color:var(--ok)}
+.msg{padding:8px 10px;border-radius:8px;background:var(--bg)}
+.msg.err{color:var(--bad)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+td,th{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<div class="row" style="justify-content:space-between">
+  <h1>슬라임 왕국S 관리</h1>
+  <div class="row"><span id="who" class="mute"></span><button id="login" class="ghost">구글 로그인</button><button id="logout" class="ghost" hidden>로그아웃</button></div>
+</div>
+<div id="note" class="msg" hidden></div>
+
+<div id="app" hidden>
+<nav id="tabs"><button data-t="today" class="on">오늘</button><button data-t="find">계정 찾기</button><button data-t="mail">우편</button><button data-t="config">공지 · 점검</button></nav>
+
+<section id="t-today" class="card"><div class="row" style="justify-content:space-between"><h2>오늘</h2><button class="ghost" id="reloadToday">새로 고침</button></div><div id="today" class="grid"></div></section>
+
+<section id="t-find" class="card" hidden>
+  <h2>계정 찾기</h2>
+  <div class="row"><input id="q" placeholder="계정 번호(7F3A-91C2) · 메일 일부 · 비우면 최근 50"><button id="findBtn">찾기</button></div>
+  <div id="found" class="list"></div>
+  <div id="detail" hidden></div>
+</section>
+
+<section id="t-mail" class="card" hidden>
+  <h2>우편 보내기</h2>
+  <div class="row"><input id="mUid" placeholder="받는 계정 id(비우면 전체)"></div>
+  <div class="row"><input id="mTitle" placeholder="제목"></div>
+  <textarea id="mBody" placeholder="내용"></textarea>
+  <div class="row"><input id="mGold" type="number" min="0" placeholder="골드"><input id="mCore" type="number" min="0" placeholder="젤리 코어"><input id="mShard" type="number" min="0" placeholder="프리즘 조각"><input id="mDays" type="number" min="1" value="7" title="기간(일)"></div>
+  <div class="row"><button id="mSend">보내기</button><span class="mute">기간은 일 단위 · 지금부터</span></div>
+  <h2>최근 우편</h2><div id="mails" class="list"></div>
+</section>
+
+<section id="t-config" class="card" hidden>
+  <h2>공지 · 점검 · 최소 버전</h2>
+  <div id="cfgNow" class="tbl"></div>
+  <h2>공지(새로 쓰면 앱이 한 번 띄움)</h2>
+  <div class="row"><input id="nTitle" placeholder="공지 제목"></div>
+  <textarea id="nBody" placeholder="공지 내용"></textarea>
+  <div class="row"><button id="nSave">공지 올리기</button></div>
+  <h2>점검</h2>
+  <div class="row"><label><input type="checkbox" id="mtOn"> 점검 중(앱이 막힘)</label><input id="mtMsg" placeholder="점검 안내 문구"><button id="mtSave">저장</button></div>
+  <h2>최소 버전</h2>
+  <div class="row"><input id="mvVer" placeholder="예 0.1.0"><input id="mvMsg" placeholder="업데이트 안내 문구"><button id="mvSave">저장</button></div>
+</section>
+</div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const URL_ = "https://iwkkwekkbgfvmjmcruin.supabase.co";
+const KEY = "sb_publishable_lfLweq9sCmceSOQXMBLBNA_5o_5hHnf";   // 공개용 키(앱과 같음 · 비밀 아님)
+const sb = window.__mockSb || supabase.createClient(URL_, KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const shortId = id => id ? (id.slice(0,4) + "-" + id.slice(4,8)).toUpperCase() : "";
+const when = t => t ? new Date(t).toLocaleString("ko-KR", {month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit"}) : "—";
+const prog = p => p == null ? "저장 없음" : "전생 " + Math.floor(p / 10000) + " · 최고 " + (p % 10000) + " 스테이지";
+
+function note(text, err) { const n = $("note"); n.hidden = !text; n.textContent = text || ""; n.className = "msg" + (err ? " err" : ""); }
+async function rpc(fn, args) {
+  const { data, error } = await sb.rpc(fn, args || {});
+  if (error) { note(fn + " 실패 — " + (error.code === "42501" ? "운영자 계정이 아닙니다" : error.message), true); throw error; }
+  return data;
+}
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  $("login").hidden = !!session; $("logout").hidden = !session;
+  $("who").textContent = session ? session.user.email || "" : "";
+  if (!session) { $("app").hidden = true; note("운영자 구글 계정으로 로그인해 주십시오."); return; }
+  if (!(await rpc("is_admin"))) { $("app").hidden = true; note("이 계정은 운영자가 아닙니다. 운영자 지정 뒤 다시 로그인해 주십시오.", true); return; }
+  note(""); $("app").hidden = false; loadToday();
+}
+
+$("login").onclick = () => sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
+$("logout").onclick = async () => { await sb.auth.signOut(); start(); };
+
+$("tabs").onclick = e => {
+  const t = e.target.dataset.t; if (!t) return;
+  for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.t === t);
+  for (const s of ["today","find","mail","config"]) $("t-" + s).hidden = s !== t;
+  if (t === "mail") loadMails(); if (t === "config") loadConfig();
+};
+
+async function loadToday() {
+  const d = await rpc("admin_today");
+  const names = { users:"전체 계정", google:"구글 계정", new_today:"오늘 새 계정", active_today:"오늘 접속", saves:"서버 저장", banned:"이용 제한", purchases_7d:"7일 결제" };
+  $("today").innerHTML = Object.keys(names).map(k => `<div class="stat"><b>${esc(d[k])}</b><span>${names[k]}</span></div>`).join("");
+}
+$("reloadToday").onclick = loadToday;
+
+async function find() {
+  const rows = await rpc("admin_find", { q: $("q").value.trim() });
+  $("detail").hidden = true;
+  $("found").innerHTML = rows.length ? rows.map(u => `<div class="item" data-id="${esc(u.id)}">
+    <div class="row"><b>${shortId(u.id)}</b><span class="tag ${u.is_anonymous ? "" : "ok"}">${u.is_anonymous ? "손님" : esc(u.provider || "계정")}</span>${u.banned ? '<span class="tag bad">제한</span>' : ""}</div>
+    <small>${esc(u.email || "메일 없음")} · ${prog(u.progress)}</small><small>마지막 로그인 ${when(u.last_sign_in_at)} · 저장 ${when(u.saved_at)} · 판 ${esc(u.rev ?? "—")}</small></div>`).join("") : '<div class="mute">찾은 계정이 없습니다.</div>';
+}
+$("findBtn").onclick = find;
+$("q").onkeydown = e => { if (e.key === "Enter") find(); };
+$("found").onclick = e => { const it = e.target.closest(".item"); if (it) showUser(it.dataset.id); };
+
+async function showUser(id) {
+  const d = await rpc("admin_user", { uid: id });
+  const u = d.user || {}, s = d.save, b = d.backup;
+  const tbl = (rows, cols) => rows.length ? `<div class="tbl"><table><tr>${cols.map(c => `<th>${c[1]}</th>`).join("")}</tr>${rows.map(r => `<tr>${cols.map(c => `<td>${esc(c[2] ? c[2](r[c[0]]) : r[c[0]])}</td>`).join("")}</tr>`).join("")}</table></div>` : '<div class="mute">없음</div>';
+  $("detail").hidden = false;
+  $("detail").innerHTML = `<div class="card">
+    <div class="row"><h2>${shortId(u.id)}</h2>${d.ban ? `<span class="tag bad">제한 — ${esc(d.ban.reason)}</span>` : ""}</div>
+    <div class="mono">${esc(u.id)}</div>
+    <div class="mute">${esc(u.email || "메일 없음")} · ${u.is_anonymous ? "손님" : esc(u.provider)} · 만든 날 ${when(u.created_at)} · 마지막 로그인 ${when(u.last_sign_in_at)}</div>
+    <div><b>저장</b> ${s ? `${prog(s.progress)} · 판 ${s.rev} · ${when(s.updated_at)} · 앱 ${esc(s.app_ver)} · ${s.bytes}자` : "없음"}</div>
+    <div><b>보관본</b> ${b ? `${prog(b.progress)} · 판 ${b.rev} · ${when(b.saved_at)}` : "없음"}</div>
+    <div class="row">
+      <button id="uRestore" ${b ? "" : "disabled"}>보관본으로 되돌리기</button>
+      <button class="ghost" id="uMail">이 계정에 우편</button>
+      ${d.ban ? '<button class="ghost" id="uUnban">제한 풀기</button>' : '<button class="ghost" id="uBan">이용 제한</button>'}
+      <button class="bad" id="uDel">계정 삭제</button>
+    </div>
+    <div id="uMsg" class="mute"></div>
+    <h2>결제</h2>${tbl(d.purchases, [["product","상품"],["order_id","주문 번호"],["created_at","때",when]])}
+    <h2>최근 14일</h2>${tbl(d.days, [["day","날"],["best_stage","최고"],["prestige","전생"],["play_min","분"],["app_ver","앱"]])}
+    <h2>받은 우편</h2>${tbl(d.mails, [["mail_id","번호"],["title","제목"],["claimed_at","받은 때",when]])}
+  </div>`;
+  const msg = t => $("uMsg").textContent = t;
+  $("uRestore").onclick = async () => {
+    if (!confirm("지금 저장과 보관본을 맞바꿉니다. 플레이어가 앱을 끈 상태에서 하는 것이 안전합니다. 진행할까요?")) return;
+    const r = await rpc("admin_restore_backup", { uid: id }); msg(r.ok ? "되돌렸습니다. 다음에 앱을 켜면 받습니다." : "보관본이 없습니다."); showUser(id);
+  };
+  $("uMail").onclick = () => { $("mUid").value = id; $("tabs").querySelector('[data-t="mail"]').click(); };
+  if ($("uBan")) $("uBan").onclick = async () => { const r = prompt("제한 이유"); if (!r) return; await rpc("admin_ban", { uid: id, reason: r }); showUser(id); };
+  if ($("uUnban")) $("uUnban").onclick = async () => { await rpc("admin_unban", { uid: id }); showUser(id); };
+  $("uDel").onclick = async () => {
+    if (prompt("계정과 저장 · 보관본 · 기록이 모두 지워집니다. 되돌릴 수 없습니다.\n지우려면 계정 번호 " + shortId(id) + " 를 그대로 적어 주십시오.") !== shortId(id)) return;
+    await rpc("admin_delete_user", { uid: id }); $("detail").hidden = true; find();
+  };
+}
+
+async function loadMails() {
+  const rows = await rpc("admin_mails");
+  $("mails").innerHTML = rows.length ? rows.map(m => `<div class="item"><b>#${m.id} ${esc(m.title)}</b>
+    <small>${m.user_id ? "한 사람 " + shortId(m.user_id) : "전체"} · ${esc(JSON.stringify(m.reward))} · 받음 ${m.claims}</small>
+    <small>${when(m.starts_at)} ~ ${when(m.ends_at)}</small></div>`).join("") : '<div class="mute">없음</div>';
+}
+$("mSend").onclick = async () => {
+  const n = id => Math.max(0, parseInt($(id).value || "0", 10) || 0);
+  const reward = {}; if (n("mGold")) reward.gold = n("mGold"); if (n("mCore")) reward.jellyCore = n("mCore"); if (n("mShard")) reward.prismShard = n("mShard");
+  const uid = $("mUid").value.trim() || null, title = $("mTitle").value.trim();
+  if (!title) { note("제목을 적어 주십시오.", true); return; }
+  if (!confirm((uid ? "계정 " + shortId(uid) : "전체 플레이어") + "에게 «" + title + "» 우편을 보냅니다. " + JSON.stringify(reward))) return;
+  const id = await rpc("admin_send_mail", { uid, title, body: $("mBody").value, reward, days: n("mDays") || 7 });
+  note("우편 #" + id + " 를 보냈습니다."); loadMails();
+};
+
+async function loadConfig() {
+  const { data, error } = await sb.from("remote_config").select("key,value,updated_at").order("key");
+  if (error) { note(error.message, true); return; }
+  $("cfgNow").innerHTML = `<table><tr><th>키</th><th>값</th><th>바꾼 때</th></tr>${data.map(r => `<tr><td>${esc(r.key)}</td><td class="mono">${esc(JSON.stringify(r.value))}</td><td>${when(r.updated_at)}</td></tr>`).join("")}</table>`;
+  const get = k => (data.find(r => r.key === k) || {}).value || {};
+  $("mtOn").checked = !!get("maintenance").on; $("mtMsg").value = get("maintenance").message || "";
+  $("mvVer").value = get("minVersion").version || ""; $("mvMsg").value = get("minVersion").message || "";
+}
+async function setCfg(k, v, what) { if (!confirm(what + " 을(를) 앱 전체에 적용합니다.")) return; await rpc("admin_set_config", { k, v }); note(what + " 저장했습니다. 앱은 다음에 켤 때 읽습니다."); loadConfig(); }
+$("nSave").onclick = () => setCfg("notice", { id: String(Date.now()), title: $("nTitle").value, body: $("nBody").value }, "공지");
+$("mtSave").onclick = () => setCfg("maintenance", { on: $("mtOn").checked, message: $("mtMsg").value }, "점검 설정");
+$("mvSave").onclick = () => setCfg("minVersion", { version: $("mvVer").value.trim(), message: $("mvMsg").value }, "최소 버전");
+
+sb.auth.onAuthStateChange(() => setTimeout(start, 0));   // 콜백 안에서 바로 서버를 부르면 supabase-js 가 멈출 수 있어 한 박자 뒤로
+</script>
+</body>
+</html>
