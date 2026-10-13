@@ -1,4 +1,4 @@
-<!-- 슬라임 왕국S 운영 관리 페이지(서버 S7) — 운영자 구글 로그인 · 계정 찾기 · 보관본 되돌리기 · 우편 · 공지 · 이용 제한. 권한 판정은 서버 함수(admin_*)가 한다 -->
+<!-- 슬라임 왕국S 운영 관리 페이지(서버 S7) — 운영자 구글 로그인 · 계정 찾기 · 보관본 되돌리기 · 우편 · 공지 · 이용 제한 · 공동 목표(C1). 권한 판정은 서버 함수(admin_*)가 한다 -->
 <!doctype html>
 <html lang="ko">
 <head>
@@ -52,7 +52,7 @@ td,th{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left}
 <div id="note" class="msg" hidden></div>
 
 <div id="app" hidden>
-<nav id="tabs"><button data-t="today" class="on">오늘</button><button data-t="find">계정 찾기</button><button data-t="mail">우편</button><button data-t="config">공지 · 점검</button></nav>
+<nav id="tabs"><button data-t="today" class="on">오늘</button><button data-t="find">계정 찾기</button><button data-t="mail">우편</button><button data-t="config">공지 · 점검</button><button data-t="coop">공동 목표</button></nav>
 
 <section id="t-today" class="card"><div class="row" style="justify-content:space-between"><h2>오늘</h2><button class="ghost" id="reloadToday">새로 고침</button></div><div id="today" class="grid"></div></section>
 
@@ -84,6 +84,13 @@ td,th{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left}
   <div class="row"><label><input type="checkbox" id="mtOn"> 점검 중(앱이 막힘)</label><input id="mtMsg" placeholder="점검 안내 문구"><button id="mtSave">저장</button></div>
   <h2>최소 버전</h2>
   <div class="row"><input id="mvVer" placeholder="예 0.1.0"><input id="mvMsg" placeholder="업데이트 안내 문구"><button id="mvSave">저장</button></div>
+</section>
+
+<section id="t-coop" class="card" hidden>
+  <h2>공동 목표(이번 주 · 한국 시각 월요일 0시부터)</h2>
+  <div id="coopNow" class="tbl"></div>
+  <div class="row"><input id="cTarget" type="number" min="1" placeholder="목표 처치 수"><input id="cBot" type="number" min="0" placeholder="가상 기여(시간당)"><input id="cCap" type="number" min="0" placeholder="한 사람 하루 상한"><button id="cSave">이번 주에 적용</button></div>
+  <div class="mute">보이는 진행 = 실제 + 가상(주 시작부터 지난 시간 × 시간당). 25 · 50 · 75 · 100% 를 넘으면 전체 우편이 한 통씩 나갑니다. 앱에서 끄려면 원격 설정 tuning 에 coopOn false.</div>
 </section>
 </div>
 </main>
@@ -120,8 +127,8 @@ $("logout").onclick = async () => { await sb.auth.signOut(); start(); };
 $("tabs").onclick = e => {
   const t = e.target.dataset.t; if (!t) return;
   for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.t === t);
-  for (const s of ["today","find","mail","config"]) $("t-" + s).hidden = s !== t;
-  if (t === "mail") loadMails(); if (t === "config") loadConfig();
+  for (const s of ["today","find","mail","config","coop"]) $("t-" + s).hidden = s !== t;
+  if (t === "mail") loadMails(); if (t === "config") loadConfig(); if (t === "coop") loadCoop();
 };
 
 async function loadToday() {
@@ -206,6 +213,19 @@ async function setCfg(k, v, what) { if (!confirm(what + " 을(를) 앱 전체에
 $("nSave").onclick = () => setCfg("notice", { id: String(Date.now()), title: $("nTitle").value, body: $("nBody").value }, "공지");
 $("mtSave").onclick = () => setCfg("maintenance", { on: $("mtOn").checked, message: $("mtMsg").value }, "점검 설정");
 $("mvSave").onclick = () => setCfg("minVersion", { version: $("mvVer").value.trim(), message: $("mvMsg").value }, "최소 버전");
+
+async function loadCoop() {
+  const rows = await rpc("admin_coop");
+  $("coopNow").innerHTML = rows.length ? `<table><tr><th>주</th><th>목표</th><th>실제</th><th>보이는 진행</th><th>가상/시간</th><th>하루 상한</th><th>이정표</th><th>참여</th></tr>${rows.map(g => `<tr><td>${g.week}</td><td>${esc(g.target)}</td><td>${esc(g.progress)}</td><td>${esc(g.shown)} (${Math.floor(g.shown * 100 / g.target)}%)</td><td>${esc(g.bot_per_hour)}</td><td>${esc(g.daily_cap)}</td><td>${g.sent} / 4</td><td>${esc(g.players)}</td></tr>`).join("")}</table>` : '<div class="mute">아직 이번 주에 아무도 참여하지 않았습니다(첫 참여 때 지난주 값으로 만들어집니다).</div>';
+  if (rows.length) { $("cTarget").value = rows[0].target; $("cBot").value = rows[0].bot_per_hour; $("cCap").value = rows[0].daily_cap; }
+}
+$("cSave").onclick = async () => {
+  const n = id => Math.max(0, parseInt($(id).value || "0", 10) || 0);
+  if (!n("cTarget")) { note("목표를 적어 주십시오.", true); return; }
+  if (!confirm("이번 주 공동 목표를 목표 " + n("cTarget") + " · 가상 " + n("cBot") + "/시간 · 하루 상한 " + n("cCap") + " 로 바꿉니다.")) return;
+  await rpc("admin_coop_set", { target: n("cTarget"), bot: n("cBot"), cap: n("cCap") });
+  note("공동 목표를 바꿨습니다."); loadCoop();
+};
 
 sb.auth.onAuthStateChange(() => setTimeout(start, 0));   // 콜백 안에서 바로 서버를 부르면 supabase-js 가 멈출 수 있어 한 박자 뒤로
 </script>
